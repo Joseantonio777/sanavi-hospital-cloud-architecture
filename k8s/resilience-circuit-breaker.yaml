@@ -1,0 +1,65 @@
+# ============================================================================
+# Grupo Hospitalario SanaVI - Patrones de Resiliencia y Tolerancia a Fallos
+# Patrón Circuit Breaker, Outlier Detection, Bulkhead y Retry con Backoff
+# Protege la plataforma ante caídas de Sistemas Legados o Pasarelas de Pago
+# ============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sanavi-resilience-circuit-breaker-config
+  namespace: sanavi-prod
+  labels:
+    pattern: circuit-breaker
+    compliance: hipaa
+data:
+  resilience-policy.yaml: |
+    circuitBreakerPolicy:
+      targetServices:
+        - legacy-integration-service.sanavi-legacy.svc.cluster.local
+        - facturacion-service.sanavi-prod.svc.cluster.local
+        - hce-service.sanavi-prod.svc.cluster.local
+      connectionPool:
+        tcp:
+          maxConnections: 100
+          connectTimeout: 3000ms
+        http:
+          http1MaxPendingRequests: 50
+          maxRequestsPerConnection: 10
+          maxRetries: 3
+      outlierDetection:
+        consecutive5xxErrors: 3
+        interval: 10s
+        baseEjectionTime: 30s
+        maxEjectionPercent: 50
+      retryPolicy:
+        attempts: 3
+        perTryTimeout: 2s
+        retryOn: "5xx,connect-failure,reset"
+        exponentialBackoff:
+          baseInterval: 250ms
+          maxInterval: 5000ms
+      fallbackStrategy:
+        legacyIntegrationFallback: "ENQUEUE_SQS_DLQ_AND_RETURN_CACHED_HL7_RECORD"
+        billingFallback: "DEFER_INVOICE_TO_EVENTBRIDGE_ASYNC_WORKER"
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: hce-service-pdb
+  namespace: sanavi-prod
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: hce-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: facturacion-service-pdb
+  namespace: sanavi-prod
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: facturacion-service

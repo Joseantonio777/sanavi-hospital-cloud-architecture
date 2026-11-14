@@ -1,0 +1,269 @@
+# ============================================================================
+# Grupo Hospitalario SanaVI - Despliegue de Microservicios Backend en EKS
+# 1. hce-service (Historia Clínica Electrónica -> RDS PostgreSQL)
+# 2. citas-service (Gestión de Citas Médicas -> DynamoDB SanaVI-Citas)
+# 3. inventario-service (Gestión de Inventarios -> DynamoDB SanaVI-Inventario)
+# 4. facturacion-service (Facturación y Pagos -> RDS PostgreSQL + S3 KMS)
+# 5. legacy-integration-service (Adaptador HL7/FHIR -> SQS Legacy Systems)
+# ============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hce-service
+  namespace: sanavi-prod
+  labels:
+    app: hce-service
+    tier: clinical-core
+    compliance: hipaa
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: hce-service
+  template:
+    metadata:
+      labels:
+        app: hce-service
+        tier: clinical-core
+    spec:
+      containers:
+        - name: hce-service
+          image: public.ecr.aws/nginx/nginx:stable-alpine
+          ports:
+            - containerPort: 80
+          env:
+            - name: SERVICE_NAME
+              value: "SanaVI-HCE-Electronic-Health-Record"
+            - name: DB_ENGINE
+              value: "RDS-PostgreSQL-MultiAZ-HIPAA"
+            - name: ENCRYPTION_MODE
+              value: "AWS-KMS-AES256-TLS1.3"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hce-service
+  namespace: sanavi-prod
+spec:
+  selector:
+    app: hce-service
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: citas-service
+  namespace: sanavi-prod
+  labels:
+    app: citas-service
+    tier: patient-experience
+    compliance: hipaa
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: citas-service
+  template:
+    metadata:
+      labels:
+        app: citas-service
+        tier: patient-experience
+    spec:
+      containers:
+        - name: citas-service
+          image: public.ecr.aws/nginx/nginx:stable-alpine
+          ports:
+            - containerPort: 80
+          env:
+            - name: SERVICE_NAME
+              value: "SanaVI-Medical-Appointments-Service"
+            - name: DYNAMODB_TABLE
+              value: "SanaVI-Citas"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "400m"
+              memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: citas-service
+  namespace: sanavi-prod
+spec:
+  selector:
+    app: citas-service
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventario-service
+  namespace: sanavi-prod
+  labels:
+    app: inventario-service
+    tier: hospital-logistics
+    compliance: hipaa
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: inventario-service
+  template:
+    metadata:
+      labels:
+        app: inventario-service
+        tier: hospital-logistics
+    spec:
+      containers:
+        - name: inventario-service
+          image: public.ecr.aws/nginx/nginx:stable-alpine
+          ports:
+            - containerPort: 80
+          env:
+            - name: SERVICE_NAME
+              value: "SanaVI-Medical-Inventory-Service"
+            - name: DYNAMODB_TABLE
+              value: "SanaVI-Inventario"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "400m"
+              memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventario-service
+  namespace: sanavi-prod
+spec:
+  selector:
+    app: inventario-service
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: facturacion-service
+  namespace: sanavi-prod
+  labels:
+    app: facturacion-service
+    tier: financial-core
+    compliance: hipaa
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: facturacion-service
+  template:
+    metadata:
+      labels:
+        app: facturacion-service
+        tier: financial-core
+    spec:
+      containers:
+        - name: facturacion-service
+          image: public.ecr.aws/nginx/nginx:stable-alpine
+          ports:
+            - containerPort: 80
+          env:
+            - name: SERVICE_NAME
+              value: "SanaVI-Billing-And-Payments-Service"
+            - name: DB_ENGINE
+              value: "RDS-PostgreSQL-MultiAZ"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: facturacion-service
+  namespace: sanavi-prod
+spec:
+  selector:
+    app: facturacion-service
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: legacy-integration-service
+  namespace: sanavi-legacy
+  labels:
+    app: legacy-integration-service
+    tier: anti-corruption-layer
+    compliance: hipaa
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: legacy-integration-service
+  template:
+    metadata:
+      labels:
+        app: legacy-integration-service
+        tier: anti-corruption-layer
+    spec:
+      containers:
+        - name: legacy-hl7-adapter
+          image: public.ecr.aws/nginx/nginx:stable-alpine
+          ports:
+            - containerPort: 80
+          env:
+            - name: SERVICE_NAME
+              value: "SanaVI-Legacy-HL7-FHIR-Adapter"
+            - name: SQS_QUEUE
+              value: "sanavi-legacy-hl7-integration-queue"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "300m"
+              memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: legacy-integration-service
+  namespace: sanavi-legacy
+spec:
+  selector:
+    app: legacy-integration-service
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: ClusterIP

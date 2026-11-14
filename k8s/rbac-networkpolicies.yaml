@@ -1,0 +1,68 @@
+# ============================================================================
+# Grupo Hospitalario SanaVI - Control de Acceso RBAC y NetworkPolicies (HIPAA)
+# Principio de Mínimo Privilegio (Zero-Trust) y Segmentación de Red de Pods
+# ============================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sanavi-clinical-sa
+  namespace: sanavi-prod
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::486923200363:role/LabRole
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sanavi-microservice-least-privilege-role
+  namespace: sanavi-prod
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sanavi-microservice-rolebinding
+  namespace: sanavi-prod
+subjects:
+  - kind: ServiceAccount
+    name: sanavi-clinical-sa
+    namespace: sanavi-prod
+roleRef:
+  kind: Role
+  name: sanavi-microservice-least-privilege-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hipaa-isolate-clinical-records
+  namespace: sanavi-prod
+spec:
+  podSelector:
+    matchLabels:
+      tier: clinical-core
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: sanavi-prod
+        - namespaceSelector:
+            matchLabels:
+              name: sanavi-legacy
+      ports:
+        - protocol: TCP
+          port: 80
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 5432

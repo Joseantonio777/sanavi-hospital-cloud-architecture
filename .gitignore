@@ -1,0 +1,9 @@
+bin/
+*.exe
+__pycache__/
+*.pyc
+.terraform/
+*.tfstate
+*.tfstate.backup
+.env
+*.pem

@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sanavi-prod
+  labels:
+    name: sanavi-prod
+    compliance: hipaa
+    environment: production
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sanavi-legacy
+  labels:
+    name: sanavi-legacy
+    compliance: hipaa
+    integration: hl7-fhir-adapter
